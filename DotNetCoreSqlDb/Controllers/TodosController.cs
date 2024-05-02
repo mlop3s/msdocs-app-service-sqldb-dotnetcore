@@ -33,12 +33,13 @@ namespace DotNetCoreSqlDb.Controllers
 
             TodoListByteArray = await _cache.GetAsync(_TodoItemsCacheKey);
             if (TodoListByteArray != null && TodoListByteArray.Length > 0)
-            { 
+            {
                 todos = ConvertData<Todo>.ByteArrayToObjectList(TodoListByteArray);
             }
-            else 
+            else
             {
-                todos = await _context.Todo.ToListAsync();
+                await SeedInitialDataAsync(_context);
+                todos = await _context.Todo.OrderByDescending(t => t.CreatedDate).Take(20).ToListAsync();
                 TodoListByteArray = ConvertData<Todo>.ObjectListToByteArray(todos);
                 await _cache.SetAsync(_TodoItemsCacheKey, TodoListByteArray);
             }
@@ -63,20 +64,20 @@ namespace DotNetCoreSqlDb.Controllers
             {
                 todo = ConvertData<Todo>.ByteArrayToObject(todoItemByteArray);
             }
-            else 
+            else
             {
                 todo = await _context.Todo
                 .FirstOrDefaultAsync(m => m.ID == id);
-            if (todo == null)
-            {
-                return NotFound();
-            }
+                if (todo == null)
+                {
+                    return NotFound();
+                }
 
                 todoItemByteArray = ConvertData<Todo>.ObjectToByteArray(todo);
                 await _cache.SetAsync(GetTodoItemCacheKey(id), todoItemByteArray);
             }
 
-            
+
 
             return View(todo);
         }
@@ -198,9 +199,43 @@ namespace DotNetCoreSqlDb.Controllers
 
         private string GetTodoItemCacheKey(int? id)
         {
-            return _TodoItemsCacheKey+"_&_"+id;
+            return _TodoItemsCacheKey + "_&_" + id;
         }
-    }
 
-    
+        private static async Task SeedInitialDataAsync(MyDatabaseContext context)
+        {
+            if (context.Todo.Any())
+            {
+                return;
+            }
+
+            var tracking = context.ChangeTracker.QueryTrackingBehavior;
+            try
+            {
+                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+                for (int i = 0; i < 10000; i++)
+                {
+                    context.Todo.Add(new Todo
+                    {
+                        Name = "Name " + i,
+                        FamilyName = "FamilyName " + i,
+                        CreatedDate = DateTime.Now,
+                        Description = "Description " + i
+                    });
+
+                    if (i % 50 == 0)
+                    {
+                        await context.SaveChangesAsync();
+                    }
+                }
+
+                await context.SaveChangesAsync();
+            }
+            finally
+            {
+                context.ChangeTracker.QueryTrackingBehavior = tracking;
+            }
+        } 
+    }
 }
